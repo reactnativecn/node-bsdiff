@@ -6,6 +6,7 @@
 #include <node_buffer.h>
 
 #include <memory.h>
+#include <stdlib.h>
 
 extern "C" {
 #include "bsdiff/bsdiff.h"
@@ -120,7 +121,7 @@ namespace bsdiffNode
 
             stream.next_out = bufStart;
             stream.avail_out = 4096;
-            BZ2_bzCompress( &stream, BZ_FINISH);
+            ret = BZ2_bzCompress( &stream, BZ_FINISH);
         }
 
         if (ret != BZ_STREAM_END) {
@@ -132,6 +133,7 @@ namespace bsdiffNode
         Local<Value> argv[1] = { obj };
         cb->Call(Null(isolate), 1, argv);
 
+        BZ2_bzCompressEnd(&stream);
         free(bufStart);
     }
 
