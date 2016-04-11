@@ -1570,3 +1570,9 @@ const char * BZ_API(BZ2_bzerror) (BZFILE *b, int *errnum)
 /*-------------------------------------------------------------*/
 /*--- end                                           bzlib.c ---*/
 /*-------------------------------------------------------------*/
+
+#include <stdlib.h>
+
+void bz_internal_error ( int errcode ) {
+   exit(errcode);
+}
