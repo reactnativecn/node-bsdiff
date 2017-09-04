@@ -5,8 +5,10 @@
 #include <node.h>
 #include <node_buffer.h>
 
-#include <memory.h>
-#include <stdlib.h>
+#include <cmemory>
+#include <cstdlib>
+
+using namespace std;
 
 extern "C" {
 #include "bsdiff/bsdiff.h"
