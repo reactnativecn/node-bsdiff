@@ -15,6 +15,9 @@
       ],
       "defines": [
         "BZ_NO_STDIO"
+      ],
+      "include_dirs" : [
+        "<!(node -e \"require('nan')\")"
       ]
     }
   ]

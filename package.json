@@ -10,7 +10,9 @@
   "gypfile": true,
   "author": "tdzl2003",
   "license": "ISC",
-  "dependencies": {},
+  "dependencies": {
+    "nan": "^2.14.0"
+  },
   "devDependencies": {},
   "repository": {
     "type": "git",

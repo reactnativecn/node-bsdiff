@@ -1,11 +1,10 @@
 /**
  * Created by tdzl2003 on 2/28/16.
  */
-
+#include <nan.h>
 #include <node.h>
 #include <node_buffer.h>
 
-#include <cmemory>
 #include <cstdlib>
 
 using namespace std;
@@ -42,7 +41,10 @@ namespace bsdiffNode
       Local<Object> returnObj = node::Buffer::Copy(opaque->isolate, (const char*)buffer, size).ToLocalChecked();
 
       Local<Value> argv[1] = { returnObj };
-      opaque->cb->Call(Null(opaque->isolate), 1, argv);
+      // opaque->cb->Call(Nan::GetCurrentContext()->Global(), Null(opaque->isolate), 1, argv);
+
+
+      Nan::MakeCallback(Nan::GetCurrentContext()->Global(), opaque->cb, 1, argv);
 
       return 0;
     }
@@ -52,8 +54,7 @@ namespace bsdiffNode
         HandleScope scope(isolate);
 
         if (!node::Buffer::HasInstance(args[0]) || !node::Buffer::HasInstance(args[1]) || !args[2]->IsFunction()) {
-          isolate->ThrowException(Exception::TypeError(
-                            String::NewFromUtf8(isolate, "Invalid arguments.")));
+          Nan::ThrowError("Invalid arguments.");
         }
 
         char*         oldData   = node::Buffer::Data(args[0]);
@@ -75,8 +76,7 @@ namespace bsdiffNode
         stream.opaque = &streamOpaque;
 
         if (bsdiff((const uint8_t*)oldData, oldLength, (const uint8_t*)newData, newLength, &stream)) {
-            isolate->ThrowException(Exception::Error(
-                    String::NewFromUtf8(isolate, "Create bsdiff failed.")));
+          Nan::ThrowError("Create bsdiff failed.");
         }
 
 //        args.GetReturnValue().Set(returnObj);
@@ -88,7 +88,7 @@ namespace bsdiffNode
         HandleScope scope(isolate);
 
         if (!node::Buffer::HasInstance(args[0])) {
-          isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, "Invalid arguments.")));
+          Nan::ThrowError("Invalid arguments.");
         }
 
         char*         Data   = node::Buffer::Data(args[0]);
@@ -102,7 +102,7 @@ namespace bsdiffNode
 
         int ret = BZ2_bzCompressInit ( &stream, 9, 0, 0 );
         if (ret != BZ_OK) {
-            isolate->ThrowException(Exception::Error(String::NewFromUtf8(isolate, "Compress error")));
+            Nan::ThrowError("Compress error.");
         }
 
 //        Local<Object> obj = node::Buffer::New(isolate, 4096).ToLocalChecked();
@@ -119,7 +119,9 @@ namespace bsdiffNode
         while (ret == BZ_FINISH_OK) {
             Local<Object> obj = node::Buffer::Copy(isolate, bufStart, stream.next_out - bufStart).ToLocalChecked();
             Local<Value> argv[1] = { obj };
-            cb->Call(Null(isolate), 1, argv);
+            // cb->Call(Null(isolate), 1, argv);
+
+            Nan::MakeCallback(Nan::GetCurrentContext()->Global(), cb, 1, argv);
 
             stream.next_out = bufStart;
             stream.avail_out = 4096;
@@ -128,12 +130,14 @@ namespace bsdiffNode
 
         if (ret != BZ_STREAM_END) {
             free(bufStart);
-            isolate->ThrowException(Exception::Error(String::NewFromUtf8(isolate, "Compress error")));
+            Nan::ThrowError("Compress error.");
         }
 
         Local<Object> obj = node::Buffer::Copy(isolate, bufStart, stream.next_out - bufStart).ToLocalChecked();
         Local<Value> argv[1] = { obj };
-        cb->Call(Null(isolate), 1, argv);
+        // cb->Call(Null(isolate), 1, argv);
+
+        Nan::MakeCallback(Nan::GetCurrentContext()->Global(), cb, 1, argv);
 
         BZ2_bzCompressEnd(&stream);
         free(bufStart);
