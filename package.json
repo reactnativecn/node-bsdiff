@@ -4,13 +4,14 @@
   "description": "bsdiff port to node.js",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "install": "node-gyp rebuild"
+    "build:emscripten": "docker run --rm -v $(pwd)/src/bsdiff:/src trzeci/emscripten ./scripts/build.sh",
+    "build": "node-gyp rebuild"
   },
   "gypfile": true,
   "author": "tdzl2003",
   "license": "ISC",
   "dependencies": {
+    "compressjs": "^1.0.3",
     "nan": "^2.14.0"
   },
   "devDependencies": {},

@@ -11,7 +11,6 @@ using namespace std;
 
 extern "C" {
 #include "bsdiff/bsdiff.h"
-#include "bzlib/bzlib.h"
 }
 
 namespace bsdiffNode
@@ -82,74 +81,12 @@ namespace bsdiffNode
 //        args.GetReturnValue().Set(returnObj);
 //        args.GetReturnValue().Set(String::NewFromUtf8(isolate, bufferData, String::kNormalString, bufferLength));
     }
-
-    void compress(const FunctionCallbackInfo<Value>& args) {
-        Isolate* isolate = args.GetIsolate();
-        HandleScope scope(isolate);
-
-        if (!node::Buffer::HasInstance(args[0])) {
-          Nan::ThrowError("Invalid arguments.");
-        }
-
-        char*         Data   = node::Buffer::Data(args[0]);
-        size_t        Length = node::Buffer::Length(args[0]);
-
-        Local<Function> cb = Local<Function>::Cast(args[1]);
-
-        bz_stream stream;
-        stream.bzalloc = NULL;
-        stream.bzfree = NULL;
-
-        int ret = BZ2_bzCompressInit ( &stream, 9, 0, 0 );
-        if (ret != BZ_OK) {
-            Nan::ThrowError("Compress error.");
-        }
-
-//        Local<Object> obj = node::Buffer::New(isolate, 4096).ToLocalChecked();
-
-        char* bufStart = (char*)malloc(4096);
-
-        stream.next_in = Data;
-        stream.avail_in = Length;
-        stream.next_out = bufStart;
-        stream.avail_out = 4096;
-
-        ret = BZ2_bzCompress ( &stream, BZ_FINISH );
-
-        while (ret == BZ_FINISH_OK) {
-            Local<Object> obj = node::Buffer::Copy(isolate, bufStart, stream.next_out - bufStart).ToLocalChecked();
-            Local<Value> argv[1] = { obj };
-            // cb->Call(Null(isolate), 1, argv);
-
-            Nan::MakeCallback(Nan::GetCurrentContext()->Global(), cb, 1, argv);
-
-            stream.next_out = bufStart;
-            stream.avail_out = 4096;
-            ret = BZ2_bzCompress( &stream, BZ_FINISH);
-        }
-
-        if (ret != BZ_STREAM_END) {
-            free(bufStart);
-            Nan::ThrowError("Compress error.");
-        }
-
-        Local<Object> obj = node::Buffer::Copy(isolate, bufStart, stream.next_out - bufStart).ToLocalChecked();
-        Local<Value> argv[1] = { obj };
-        // cb->Call(Null(isolate), 1, argv);
-
-        Nan::MakeCallback(Nan::GetCurrentContext()->Global(), cb, 1, argv);
-
-        BZ2_bzCompressEnd(&stream);
-        free(bufStart);
-    }
-
     void init(Local<Object> exports)
     {
         Isolate* isolate = exports->GetIsolate();
         HandleScope scope(isolate);
 
         NODE_SET_METHOD(exports, "diff", diff);
-        NODE_SET_METHOD(exports, "compress", compress);
     }
 
     NODE_MODULE(bsdiff, init)

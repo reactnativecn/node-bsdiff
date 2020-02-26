@@ -4,30 +4,35 @@
 
 var native;
 try {
-  native = require('./build/Release/bsdiff');
-} catch(e) {
+  native = require("./build/Release/bsdiff");
+} catch (e) {
   console.error(e);
-  native = require('./build/Debug/bsdiff');
+  native = require("./build/Debug/bsdiff");
 }
 exports.native = native;
 
+var compressjs = require("compressjs");
+var algorithm = compressjs.Bzip2;
+
 exports.diff = function(oldBuf, newBuf) {
   var buffers = [];
-  native.diff(oldBuf, newBuf, function(output){
+  native.diff(oldBuf, newBuf, function(output) {
     buffers.push(output);
   });
   var full = Buffer.concat(buffers);
 
   // Generate bzip2 package with header.
-  var header = new Buffer(32);
-  header.fill(0);
-  new Buffer('ENDSLEY/BSDIFF43').copy(header, 0);
-  header.writeUInt32LE(newBuf.length, 16);
+  var header = Buffer.alloc(32);
+  header.fill("ENDSLEY/BSDIFF43", 0, 16);
 
   var buffers1 = [header];
-  native.compress(full, function(output){
-    buffers1.push(output);
-  });
+  var compressed = algorithm.compressFile(full);
+  buffers1.push(compressed);
+  // console.log({compressed})
+  // native.compress(full, function(output){
+  //   buffers1.push(output);
+  //   console.log({output:output.buffer})
+  // });
 
   return Buffer.concat(buffers1);
-}
+};
