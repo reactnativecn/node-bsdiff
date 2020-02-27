@@ -4,7 +4,6 @@
   "description": "bsdiff port to node.js",
   "main": "index.js",
   "scripts": {
-    "build:emscripten": "docker run --rm -v $(pwd)/src/bsdiff:/src trzeci/emscripten ./scripts/build.sh",
     "build": "node-gyp rebuild"
   },
   "gypfile": true,
