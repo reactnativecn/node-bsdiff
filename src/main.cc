@@ -121,7 +121,7 @@ namespace bsdiffNode
             Local<Object> obj = node::Buffer::Copy(isolate, bufStart, stream.next_out - bufStart).ToLocalChecked();
             Local<Value> argv[1] = { obj };
 
-            ar.runInAsyncScope(Nan::GetCurrentContext()->Global(), opaque->cb, 1, argv);
+            ar.runInAsyncScope(Nan::GetCurrentContext()->Global(), cb, 1, argv);
 
             stream.next_out = bufStart;
             stream.avail_out = 4096;
@@ -135,8 +135,8 @@ namespace bsdiffNode
 
         Local<Object> obj = node::Buffer::Copy(isolate, bufStart, stream.next_out - bufStart).ToLocalChecked();
         Local<Value> argv[1] = { obj };
-        
-        ar.runInAsyncScope(Nan::GetCurrentContext()->Global(), opaque->cb, 1, argv);
+
+        ar.runInAsyncScope(Nan::GetCurrentContext()->Global(), cb, 1, argv);
 
         BZ2_bzCompressEnd(&stream);
         free(bufStart);
