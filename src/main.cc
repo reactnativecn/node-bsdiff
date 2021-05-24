@@ -43,8 +43,8 @@ namespace bsdiffNode
       Local<Value> argv[1] = { returnObj };
       // opaque->cb->Call(Nan::GetCurrentContext()->Global(), Null(opaque->isolate), 1, argv);
 
-
-      Nan::MakeCallback(Nan::GetCurrentContext()->Global(), opaque->cb, 1, argv);
+      Nan::AsyncResource ar("bsdiff_callback");
+      ar.runInAsyncScope(Nan::GetCurrentContext()->Global(), opaque->cb, 1, argv);
 
       return 0;
     }
@@ -116,12 +116,12 @@ namespace bsdiffNode
 
         ret = BZ2_bzCompress ( &stream, BZ_FINISH );
 
+        Nan::AsyncResource ar("bsdiff_callback");
         while (ret == BZ_FINISH_OK) {
             Local<Object> obj = node::Buffer::Copy(isolate, bufStart, stream.next_out - bufStart).ToLocalChecked();
             Local<Value> argv[1] = { obj };
-            // cb->Call(Null(isolate), 1, argv);
 
-            Nan::MakeCallback(Nan::GetCurrentContext()->Global(), cb, 1, argv);
+            ar.runInAsyncScope(Nan::GetCurrentContext()->Global(), opaque->cb, 1, argv);
 
             stream.next_out = bufStart;
             stream.avail_out = 4096;
@@ -135,9 +135,8 @@ namespace bsdiffNode
 
         Local<Object> obj = node::Buffer::Copy(isolate, bufStart, stream.next_out - bufStart).ToLocalChecked();
         Local<Value> argv[1] = { obj };
-        // cb->Call(Null(isolate), 1, argv);
-
-        Nan::MakeCallback(Nan::GetCurrentContext()->Global(), cb, 1, argv);
+        
+        ar.runInAsyncScope(Nan::GetCurrentContext()->Global(), opaque->cb, 1, argv);
 
         BZ2_bzCompressEnd(&stream);
         free(bufStart);
