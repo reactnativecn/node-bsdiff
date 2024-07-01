@@ -11,10 +11,10 @@
   "license": "ISC",
   "dependencies": {
     "compressjs": "^1.0.3",
-    "nan": "^2.14.0"
+    "nan": "^2.20.0"
   },
   "devDependencies": {
-    "md5": "^2.2.1"
+    "md5": "^2.3.0"
   },
   "repository": {
     "type": "git",
