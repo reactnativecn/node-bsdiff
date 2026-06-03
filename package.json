@@ -3,28 +3,42 @@
   "version": "0.1.9",
   "description": "bsdiff port to node.js",
   "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "binding.gyp",
+    "src/",
+    "prebuilds/"
+  ],
   "scripts": {
-    "test": "node test/test.js"
+    "test": "node test/test.js",
+    "test:bun": "bun test/test.js",
+    "prebuild": "prebuildify --napi --strip",
+    "prepublishOnly": "bun scripts/prepublish.ts",
+    "install": "node-gyp-build"
   },
   "gypfile": true,
   "author": "tdzl2003",
   "license": "ISC",
   "dependencies": {
-    "compressjs": "^1.0.3",
-    "nan": "^2.20.0"
+    "node-addon-api": "^8.5.0",
+    "node-gyp-build": "^4.8.1"
   },
   "devDependencies": {
-    "md5": "^2.3.0"
+    "@types/bun": "^1.3.8",
+    "node-gyp": "^12.2.0",
+    "prebuildify": "^6.0.0"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tdzl2003/node-bsdiff.git"
+    "url": "git+https://github.com/reactnativecn/node-bsdiff.git"
   },
   "keywords": [
     "bsdiff"
   ],
   "bugs": {
-    "url": "https://github.com/tdzl2003/node-bsdiff/issues"
+    "url": "https://github.com/reactnativecn/node-bsdiff/issues"
   },
-  "homepage": "https://github.com/tdzl2003/node-bsdiff#readme"
+  "homepage": "https://github.com/reactnativecn/node-bsdiff#readme"
 }
