@@ -1,13 +1,13 @@
 /**
- * Created by tdzl2003 on 2/28/16.
+ * node-bsdiff - Node-API implementation
+ * Refactored from NAN for Bun compatibility.
  */
-#include <nan.h>
-#include <node.h>
-#include <node_buffer.h>
+#include <napi.h>
 
+#include <climits>
 #include <cstdlib>
-
-using namespace std;
+#include <cstring>
+#include <vector>
 
 extern "C" {
 #include "bsdiff/bsdiff.h"
@@ -16,141 +16,232 @@ extern "C" {
 
 namespace bsdiffNode
 {
-    using v8::FunctionCallbackInfo;
-    using v8::HandleScope;
-    using v8::Isolate;
-    using v8::Local;
-    using v8::Object;
-    using v8::String;
-    using v8::Value;
-    using v8::Function;
-    using v8::MaybeLocal;
-    using v8::Null;
-    using v8::Boolean;
-    using v8::Exception;
+    inline bool getBufferData(const Napi::Value& arg, const uint8_t** data, size_t* length) {
+        if (arg.IsBuffer()) {
+            Napi::Buffer<uint8_t> buf = arg.As<Napi::Buffer<uint8_t>>();
+            *data = buf.Data();
+            *length = buf.Length();
+            return true;
+        }
+
+        if (arg.IsTypedArray()) {
+            Napi::TypedArray typedArray = arg.As<Napi::TypedArray>();
+            Napi::ArrayBuffer arrayBuffer = typedArray.ArrayBuffer();
+            *data = static_cast<const uint8_t*>(arrayBuffer.Data()) + typedArray.ByteOffset();
+            *length = typedArray.ByteLength();
+            return true;
+        }
+
+        if (arg.IsArrayBuffer()) {
+            Napi::ArrayBuffer arrayBuffer = arg.As<Napi::ArrayBuffer>();
+            *data = static_cast<const uint8_t*>(arrayBuffer.Data());
+            *length = arrayBuffer.ByteLength();
+            return true;
+        }
+
+        return false;
+    }
+
+    inline Napi::Buffer<uint8_t> bufferFromVector(Napi::Env env, std::vector<uint8_t>&& data) {
+        if (data.empty()) {
+            return Napi::Buffer<uint8_t>::New(env, 0);
+        }
+
+        auto* vec = new std::vector<uint8_t>(std::move(data));
+        return Napi::Buffer<uint8_t>::New(
+            env,
+            vec->data(),
+            vec->size(),
+            [](Napi::Env /*env*/, uint8_t* /*data*/, std::vector<uint8_t>* vecPtr) {
+                delete vecPtr;
+            },
+            vec
+        );
+    }
+
+    inline bool hasPendingException(Napi::Env env) {
+        bool pending = false;
+        napi_is_exception_pending(env, &pending);
+        return pending;
+    }
 
     struct DiffStreamOpaque {
-        Isolate* isolate;
-        Local<Function> cb;
+        Napi::Env env;
+        Napi::Function* cb;
+        std::vector<uint8_t>* output;
     };
 
     static int callback_write(struct bsdiff_stream* stream, const void* buffer, int size)
     {
-      DiffStreamOpaque* opaque = (DiffStreamOpaque*)stream->opaque;
-
-      Local<Object> returnObj = node::Buffer::Copy(opaque->isolate, (const char*)buffer, size).ToLocalChecked();
-
-      Local<Value> argv[1] = { returnObj };
-      // opaque->cb->Call(Nan::GetCurrentContext()->Global(), Null(opaque->isolate), 1, argv);
-
-      Nan::AsyncResource ar("bsdiff_callback");
-      ar.runInAsyncScope(Nan::GetCurrentContext()->Global(), opaque->cb, 1, argv);
-
-      return 0;
-    }
-
-    void diff(const FunctionCallbackInfo<Value>& args) {
-        Isolate* isolate = args.GetIsolate();
-        HandleScope scope(isolate);
-
-        if (!node::Buffer::HasInstance(args[0]) || !node::Buffer::HasInstance(args[1]) || !args[2]->IsFunction()) {
-          Nan::ThrowError("Invalid arguments.");
+        DiffStreamOpaque* opaque = static_cast<DiffStreamOpaque*>(stream->opaque);
+        if (size < 0) {
+            return -1;
         }
 
-        char*         oldData   = node::Buffer::Data(args[0]);
-        size_t        oldLength = node::Buffer::Length(args[0]);
+        const uint8_t* data = static_cast<const uint8_t*>(buffer);
+        size_t length = static_cast<size_t>(size);
 
-        char*         newData   = node::Buffer::Data(args[1]);
-        size_t        newLength = node::Buffer::Length(args[1]);
+        if (opaque->cb != nullptr) {
+            try {
+                Napi::Buffer<uint8_t> output = Napi::Buffer<uint8_t>::Copy(opaque->env, data, length);
+                opaque->cb->Call(opaque->env.Global(), { output });
+            } catch (Napi::Error& error) {
+                error.ThrowAsJavaScriptException();
+                return -1;
+            }
+        } else if (opaque->output != nullptr && length > 0) {
+            size_t offset = opaque->output->size();
+            opaque->output->resize(offset + length);
+            std::memcpy(opaque->output->data() + offset, data, length);
+        }
 
-        DiffStreamOpaque streamOpaque;
+        return 0;
+    }
 
-        streamOpaque.isolate = isolate;
-        streamOpaque.cb = Local<Function>::Cast(args[2]);
+    inline void writeOutput(Napi::Env env,
+                            Napi::Function* cb,
+                            std::vector<uint8_t>* output,
+                            const uint8_t* data,
+                            size_t length) {
+        if (length == 0) {
+            return;
+        }
 
+        if (cb != nullptr) {
+            Napi::Buffer<uint8_t> chunk = Napi::Buffer<uint8_t>::Copy(env, data, length);
+            cb->Call(env.Global(), { chunk });
+            return;
+        }
+
+        if (output != nullptr) {
+            size_t offset = output->size();
+            output->resize(offset + length);
+            std::memcpy(output->data() + offset, data, length);
+        }
+    }
+
+    Napi::Value diff(const Napi::CallbackInfo& info) {
+        Napi::Env env = info.Env();
+
+        const uint8_t* oldData = nullptr;
+        size_t oldLength = 0;
+        const uint8_t* newData = nullptr;
+        size_t newLength = 0;
+
+        if (info.Length() < 2 ||
+            !getBufferData(info[0], &oldData, &oldLength) ||
+            !getBufferData(info[1], &newData, &newLength)) {
+            Napi::TypeError::New(env, "Invalid arguments: expected Buffer, TypedArray, or ArrayBuffer.")
+                .ThrowAsJavaScriptException();
+            return env.Undefined();
+        }
+
+        Napi::Function cb;
+        Napi::Function* cbPtr = nullptr;
+        std::vector<uint8_t> result;
+
+        if (info.Length() > 2 && info[2].IsFunction()) {
+            cb = info[2].As<Napi::Function>();
+            cbPtr = &cb;
+        }
+
+        DiffStreamOpaque streamOpaque { env, cbPtr, cbPtr == nullptr ? &result : nullptr };
         bsdiff_stream stream;
-
-        stream.malloc = malloc;
-        stream.free = free;
+        stream.malloc = std::malloc;
+        stream.free = std::free;
         stream.write = callback_write;
         stream.opaque = &streamOpaque;
 
-        if (bsdiff((const uint8_t*)oldData, oldLength, (const uint8_t*)newData, newLength, &stream)) {
-          Nan::ThrowError("Create bsdiff failed.");
+        if (bsdiff(oldData, oldLength, newData, newLength, &stream)) {
+            if (!hasPendingException(env)) {
+                Napi::Error::New(env, "Create bsdiff failed.").ThrowAsJavaScriptException();
+            }
+            return env.Undefined();
         }
 
-//        args.GetReturnValue().Set(returnObj);
-//        args.GetReturnValue().Set(String::NewFromUtf8(isolate, bufferData, String::kNormalString, bufferLength));
+        if (cbPtr != nullptr) {
+            return env.Undefined();
+        }
+
+        return bufferFromVector(env, std::move(result));
     }
 
-    void compress(const FunctionCallbackInfo<Value>& args) {
-        Isolate* isolate = args.GetIsolate();
-        HandleScope scope(isolate);
+    Napi::Value compress(const Napi::CallbackInfo& info) {
+        Napi::Env env = info.Env();
 
-        if (!node::Buffer::HasInstance(args[0])) {
-          Nan::ThrowError("Invalid arguments.");
+        const uint8_t* data = nullptr;
+        size_t length = 0;
+        if (info.Length() < 1 || !getBufferData(info[0], &data, &length)) {
+            Napi::TypeError::New(env, "Invalid arguments: expected Buffer, TypedArray, or ArrayBuffer.")
+                .ThrowAsJavaScriptException();
+            return env.Undefined();
         }
 
-        char*         Data   = node::Buffer::Data(args[0]);
-        size_t        Length = node::Buffer::Length(args[0]);
+        if (length > static_cast<size_t>(UINT_MAX)) {
+            Napi::RangeError::New(env, "Input is too large for one-shot bzip2 compression.")
+                .ThrowAsJavaScriptException();
+            return env.Undefined();
+        }
 
-        Local<Function> cb = Local<Function>::Cast(args[1]);
+        Napi::Function cb;
+        Napi::Function* cbPtr = nullptr;
+        std::vector<uint8_t> result;
+
+        if (info.Length() > 1 && info[1].IsFunction()) {
+            cb = info[1].As<Napi::Function>();
+            cbPtr = &cb;
+        }
 
         bz_stream stream;
-        stream.bzalloc = NULL;
-        stream.bzfree = NULL;
+        std::memset(&stream, 0, sizeof(stream));
 
-        int ret = BZ2_bzCompressInit ( &stream, 9, 0, 0 );
+        int ret = BZ2_bzCompressInit(&stream, 9, 0, 0);
         if (ret != BZ_OK) {
-            Nan::ThrowError("Compress error.");
+            Napi::Error::New(env, "Compress error.").ThrowAsJavaScriptException();
+            return env.Undefined();
         }
 
-//        Local<Object> obj = node::Buffer::New(isolate, 4096).ToLocalChecked();
+        stream.next_in = reinterpret_cast<char*>(const_cast<uint8_t*>(data));
+        stream.avail_in = static_cast<unsigned int>(length);
 
-        char* bufStart = (char*)malloc(4096);
+        uint8_t outputBuffer[4096];
 
-        stream.next_in = Data;
-        stream.avail_in = Length;
-        stream.next_out = bufStart;
-        stream.avail_out = 4096;
+        do {
+            stream.next_out = reinterpret_cast<char*>(outputBuffer);
+            stream.avail_out = sizeof(outputBuffer);
 
-        ret = BZ2_bzCompress ( &stream, BZ_FINISH );
+            ret = BZ2_bzCompress(&stream, BZ_FINISH);
+            if (ret != BZ_FINISH_OK && ret != BZ_STREAM_END) {
+                BZ2_bzCompressEnd(&stream);
+                Napi::Error::New(env, "Compress error.").ThrowAsJavaScriptException();
+                return env.Undefined();
+            }
 
-        Nan::AsyncResource ar("bsdiff_callback");
-        while (ret == BZ_FINISH_OK) {
-            Local<Object> obj = node::Buffer::Copy(isolate, bufStart, stream.next_out - bufStart).ToLocalChecked();
-            Local<Value> argv[1] = { obj };
-
-            ar.runInAsyncScope(Nan::GetCurrentContext()->Global(), cb, 1, argv);
-
-            stream.next_out = bufStart;
-            stream.avail_out = 4096;
-            ret = BZ2_bzCompress( &stream, BZ_FINISH);
-        }
-
-        if (ret != BZ_STREAM_END) {
-            free(bufStart);
-            Nan::ThrowError("Compress error.");
-        }
-
-        Local<Object> obj = node::Buffer::Copy(isolate, bufStart, stream.next_out - bufStart).ToLocalChecked();
-        Local<Value> argv[1] = { obj };
-
-        ar.runInAsyncScope(Nan::GetCurrentContext()->Global(), cb, 1, argv);
+            size_t have = sizeof(outputBuffer) - stream.avail_out;
+            try {
+                writeOutput(env, cbPtr, cbPtr == nullptr ? &result : nullptr, outputBuffer, have);
+            } catch (Napi::Error& error) {
+                BZ2_bzCompressEnd(&stream);
+                error.ThrowAsJavaScriptException();
+                return env.Undefined();
+            }
+        } while (ret != BZ_STREAM_END);
 
         BZ2_bzCompressEnd(&stream);
-        free(bufStart);
+
+        if (cbPtr != nullptr) {
+            return env.Undefined();
+        }
+
+        return bufferFromVector(env, std::move(result));
     }
 
-    void init(Local<Object> exports)
-    {
-        Isolate* isolate = exports->GetIsolate();
-        HandleScope scope(isolate);
-
-        NODE_SET_METHOD(exports, "diff", diff);
-        NODE_SET_METHOD(exports, "compress", compress);
+    Napi::Object Init(Napi::Env env, Napi::Object exports) {
+        exports.Set(Napi::String::New(env, "diff"), Napi::Function::New(env, diff));
+        exports.Set(Napi::String::New(env, "compress"), Napi::Function::New(env, compress));
+        return exports;
     }
 
-    NODE_MODULE(bsdiff, init)
+    NODE_API_MODULE(bsdiff, Init)
 
 } // namespace bsdiff
