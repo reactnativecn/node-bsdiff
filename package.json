@@ -1,6 +1,6 @@
 {
   "name": "node-bsdiff",
-  "version": "0.1.9",
+  "version": "0.2.0",
   "description": "bsdiff port to node.js",
   "main": "index.js",
   "types": "index.d.ts",
@@ -19,7 +19,7 @@
     "install": "node-gyp-build"
   },
   "gypfile": true,
-  "author": "tdzl2003",
+  "author": "reactnativecn",
   "license": "ISC",
   "dependencies": {
     "node-addon-api": "^8.5.0",
